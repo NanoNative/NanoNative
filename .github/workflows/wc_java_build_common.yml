@@ -1,0 +1,218 @@
+name: 🧩 CI · Common Build
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Checkout ref.
+        required: false
+        default: ''
+        type: string
+      semver_strategy:
+        description: Semver next strategy.
+        required: false
+        default: snapshot
+        type: string
+      upstream_version:
+        description: Upstream version.
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        description: Resolve a snapshot.
+        required: false
+        default: false
+        type: boolean
+      upload_artifact:
+        description: Upload build workspace.
+        required: false
+        default: false
+        type: boolean
+    outputs:
+      commit_sha:
+        description: Commit SHA.
+        value: ${{ jobs.test.outputs.commit_sha }}
+      version:
+        description: Resolved version.
+        value: ${{ jobs.test.outputs.version }}
+      dry_run:
+        description: Publish a snapshot instead of a release.
+        value: ${{ jobs.test.outputs.dry_run }}
+
+permissions: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      commit_sha: ${{ steps.commit_info.outputs.commit_sha }}
+      dry_run: ${{ steps.version_info.outputs.dry_run }}
+      version: ${{ steps.version_info.outputs.version }}
+    steps:
+      - name: "🧑‍💻 Checkout [${{ inputs.ref }}]"
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref || github.sha }}
+          submodules: recursive
+
+      - name: "🧾 Read Commit"
+        id: commit_info
+        shell: sh
+        run: |
+          set -eu
+          commit_sha=$(git rev-parse HEAD)
+          build_output_timestamp=$(git log -1 --format=%cI HEAD)
+          printf 'commit_sha=%s\n' "${commit_sha}"
+          printf 'build_output_timestamp=%s\n' "${build_output_timestamp}"
+          {
+            printf 'commit_sha=%s\n' "${commit_sha}"
+            printf 'build_output_timestamp=%s\n' "${build_output_timestamp}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: "📅 Read UTC Date"
+        id: date_info
+        shell: sh
+        run: |
+          set -eu
+          date_version=$(date -u '+%Y.%m.%d' | sed -E 's/\.0+([0-9])/\.\1/g')
+          printf 'date_version=%s\n' "${date_version}" >> "${GITHUB_OUTPUT}"
+          printf 'date_version=%s\n' "${date_version}"
+
+      - name: "🏷️ Read Latest Tag"
+        id: latest_tag
+        shell: sh
+        run: |
+          set -eu
+          latest_tag=$(git tag --merged HEAD --sort=-creatordate | sed -n '1p')
+          date_tag=$(printf '%s\n' "${latest_tag}" | sed -nE '/^[0-9]{4}\.([1-9]|1[0-2])\.([1-9]|[12][0-9]|3[01])$/p')
+          {
+            printf 'date_tag=%s\n' "${date_tag}"
+            printf 'latest_tag=%s\n' "${latest_tag}"
+          } >> "${GITHUB_OUTPUT}"
+          printf 'date_tag=%s\n' "${date_tag:-none}"
+          printf 'latest_tag=%s\n' "${latest_tag:-none}"
+
+      - name: "🔢 Resolve Semver"
+        id: semver_info
+        uses: YunaBraska/semver-info-action@180ebf79b3c81785c50cf1f198ee236fc5591504 # v3.0.4
+        with:
+          semver-a: ${{ inputs.upstream_version || steps.date_info.outputs.date_version }}
+          semver-b: ${{ inputs.upstream_version && steps.latest_tag.outputs.latest_tag || steps.latest_tag.outputs.date_tag }}
+          fallBack-semver-a: 0.0.1
+          fallBack-semver-b: 0.0.1
+
+      - name: "🏷️ Resolve Version"
+        id: version_info
+        shell: sh
+        run: |
+          set -eu
+          dry_run="${{ inputs.dry_run }}"
+          if [ -n "${{ inputs.upstream_version }}" ]; then
+            if [ "${{ steps.semver_info.outputs.is_valid_semver_a }}" != "true" ]; then
+              echo "Invalid upstream version: ${{ inputs.upstream_version }}" >&2
+              exit 1
+            fi
+            version="${{ steps.semver_info.outputs.clean_semver_a }}"
+          else
+            version="${{ steps.date_info.outputs.date_version }}"
+          fi
+
+          if [ "${dry_run}" = "true" ]; then
+            version="${{ steps.semver_info.outputs.next_snapshot }}"
+            test -n "${version}"
+          elif [ -n "${{ inputs.semver_strategy }}" ]; then
+            version="${{ steps.semver_info.outputs[format('next_{0}', inputs.semver_strategy)] }}"
+            test -n "${version}"
+          elif [ -z "${{ inputs.upstream_version }}" ] && [ "${{ steps.semver_info.outputs.is_greater_a }}" != "true" ]; then
+            dry_run=true
+            version="${{ steps.semver_info.outputs.next_snapshot }}"
+            test -n "${version}"
+          fi
+
+          {
+            printf 'dry_run=%s\n' "${dry_run}"
+            printf 'version=%s\n' "${version}"
+          } >> "${GITHUB_OUTPUT}"
+          printf 'date_version=%s\n' "${{ steps.date_info.outputs.date_version }}"
+          printf 'date_tag=%s\n' "${{ steps.latest_tag.outputs.date_tag || 'none' }}"
+          printf 'latest_tag=%s\n' "${{ steps.latest_tag.outputs.latest_tag || 'none' }}"
+          printf 'dry_run=%s\n' "${dry_run}"
+          printf 'semver_strategy=%s\n' "${{ inputs.semver_strategy }}"
+          printf 'version=%s\n' "${version}"
+          printf 'upstream_version=%s\n' "${{ inputs.upstream_version }}"
+
+      - name: "🔍 Read Java Info"
+        id: java_info
+        uses: YunaBraska/java-info-action@11a434ffbf6bb3357363d1933be71a4076a90a6b # v3
+
+      - name: "☕ Setup Java [${{ steps.java_info.outputs.java_version }}]"
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          distribution: temurin
+          java-version: ${{ steps.java_info.outputs.java_version }}
+          cache: maven
+          server-id: github
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
+
+      - name: "🏷️ Set Project Version [${{ steps.version_info.outputs.version }}]"
+        shell: sh
+        run: |
+          set -eu
+          ${{ steps.java_info.outputs.cmd }} -B versions:set -DnewVersion="${{ steps.version_info.outputs.version }}" -DgenerateBackupPoms=false
+          ${{ steps.java_info.outputs.cmd }} -B versions:set-property -Dproperty=project.build.outputTimestamp -DnewVersion="${{ steps.commit_info.outputs.build_output_timestamp }}" -DgenerateBackupPoms=false
+
+      - name: "🎭 Setup Playwright"
+        shell: sh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          if grep -q '<groupId>com.microsoft.playwright</groupId>' pom.xml; then
+            ${{ steps.java_info.outputs.cmd }} -B exec:java -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args='install --with-deps'
+          fi
+
+      - name: "🧪 Build and Verify"
+        shell: sh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ${{ steps.java_info.outputs.cmd }} -B verify
+
+      - name: "🧼 Check Sources"
+        shell: sh
+        run: |
+          set -eu
+          git diff --exit-code -- . ':(exclude)pom.xml'
+
+      - name: "📦 Upload Build Artifact"
+        if: inputs.upload_artifact == true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: build-workspace
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 1
+          path: |
+            .mvn
+            mvnw
+            mvnw.cmd
+            pom.xml
+            release-assets
+            release-assets/**
+            src
+            target
+            !target/site
+            !target/site/**
+            !target/apidocs
+            !target/apidocs/**
+            !target/javadoc-bundle-options
+            !target/javadoc-bundle-options/**
+            !target/maven-javadoc-plugin-stale-data.txt
+            !target/jacoco.exec
+            !target/surefire-reports
+            !target/surefire-reports/**

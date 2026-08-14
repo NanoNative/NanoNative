@@ -1,0 +1,96 @@
+name: 🐳 CD · Publish Docker
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Resolved version.
+        required: true
+        type: string
+      platforms:
+        description: Image platforms.
+        required: false
+        default: linux/amd64,linux/arm64
+        type: string
+
+permissions: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      actions: read
+      packages: write
+    environment:
+      name: github-container-registry
+      url: ${{ format('https://github.com/{0}/pkgs/container/{1}', github.repository_owner, github.event.repository.name) }}
+    steps:
+      - name: "📥 Download Native Assets"
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: release-assets-linux-*
+          path: ${{ runner.temp }}/release-assets
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
+
+      - name: "📦 Prepare Image"
+        shell: sh
+        run: |
+          set -eu
+          context_dir="${RUNNER_TEMP}/docker-context"
+          mkdir -p "${context_dir}/native/amd64" "${context_dir}/native/arm64"
+          for architecture in amd64 arm64; do
+            assets=$(find "${RUNNER_TEMP}/release-assets" -maxdepth 1 -type f -name "*-linux-${architecture}-${{ inputs.version }}.native")
+            test "$(printf '%s\n' "${assets}" | sed '/^$/d' | wc -l | tr -d ' ')" -eq 1
+            cp "${assets}" "${context_dir}/native/${architecture}/app.native"
+            chmod +x "${context_dir}/native/${architecture}/app.native"
+            printf 'native_%s=%s\n' "${architecture}" "${assets}"
+          done
+          printf '%s\n' \
+            'FROM debian:bookworm-slim' \
+            'ARG TARGETARCH' \
+            "COPY native/\${TARGETARCH}/app.native /app.native" \
+            'ENTRYPOINT ["/app.native"]' \
+            > "${context_dir}/Dockerfile"
+
+      - name: "🐳 Setup Buildx"
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: "🔐 Login GHCR"
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ github.token }}
+
+      - name: "🏷️ Resolve Image Tags"
+        id: image
+        shell: sh
+        run: |
+          set -eu
+          image=$(printf '%s\n' "ghcr.io/${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
+          case "${{ inputs.version }}" in
+            *-*)
+              tags="${image}:${{ inputs.version }}"
+              ;;
+            *)
+              tags="${image}:${{ inputs.version }}
+          ${image}:latest"
+              ;;
+          esac
+          {
+            printf 'image=%s\n' "${image}"
+            printf 'tags<<EOF\n%s\nEOF\n' "${tags}"
+          } >> "${GITHUB_OUTPUT}"
+          printf 'image=%s\n' "${image}"
+          printf 'tags=%s\n' "${tags}"
+
+      - name: "🐳 Build and Publish"
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: ${{ runner.temp }}/docker-context
+          platforms: ${{ inputs.platforms }}
+          push: true
+          tags: ${{ steps.image.outputs.tags }}

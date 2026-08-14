@@ -1,0 +1,193 @@
+name: 🏷️ CD · Release
+
+on:
+  workflow_call:
+    outputs:
+      commit_sha:
+        description: Build commit.
+        value: ${{ jobs.build.outputs.commit_sha }}
+      dry_run:
+        description: Publish a snapshot instead of a release.
+        value: ${{ jobs.build.outputs.dry_run }}
+      version:
+        description: Resolved release version.
+        value: ${{ jobs.build.outputs.version }}
+    inputs:
+      force:
+        description: Publish unchanged source.
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: Publish a snapshot.
+        required: false
+        default: false
+        type: boolean
+      semver_strategy:
+        description: Semver next strategy.
+        required: false
+        default: ''
+        type: string
+      upstream_repository:
+        description: Upstream repository.
+        required: false
+        default: ''
+        type: string
+permissions: {}
+
+concurrency:
+  group: java-release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      upstream_version: ${{ steps.resolve.outputs.upstream_version }}
+      semver_strategy: ${{ steps.resolve.outputs.semver_strategy }}
+    steps:
+      - name: "🧑‍💻 Checkout"
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - name: "🏷️ Read Latest Tag"
+        id: latest_tag
+        shell: sh
+        run: |
+          set -eu
+          latest_tag=$(git tag --merged HEAD --sort=-creatordate | sed -n '1p')
+          printf 'latest_tag=%s\n' "${latest_tag}" >> "${GITHUB_OUTPUT}"
+          printf 'latest_tag=%s\n' "${latest_tag:-none}"
+
+      - name: "🌐 Read Upstream"
+        id: upstream_info
+        if: inputs.upstream_repository != ''
+        shell: sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_REPOSITORY: ${{ inputs.upstream_repository }}
+        run: |
+          set -eu
+          case "${UPSTREAM_REPOSITORY}" in
+            */*) ;;
+            *)
+              echo "Invalid upstream repository: ${UPSTREAM_REPOSITORY}" >&2
+              exit 1
+              ;;
+          esac
+          upstream_version=$(gh api "repos/${UPSTREAM_REPOSITORY}/releases/latest" --jq .tag_name)
+          test -n "${upstream_version}"
+          printf 'upstream_version=%s\n' "${upstream_version}" >> "${GITHUB_OUTPUT}"
+          printf 'upstream_repository=%s\n' "${UPSTREAM_REPOSITORY}"
+          printf 'upstream_version=%s\n' "${upstream_version}"
+
+      - name: "🔢 Compare Upstream"
+        id: semver_info
+        if: inputs.upstream_repository != ''
+        uses: YunaBraska/semver-info-action@180ebf79b3c81785c50cf1f198ee236fc5591504 # v3.0.4
+        with:
+          semver-a: ${{ steps.upstream_info.outputs.upstream_version }}
+          semver-b: ${{ steps.latest_tag.outputs.latest_tag }}
+          fallBack-semver-a: 0.0.1
+          fallBack-semver-b: 0.0.1
+
+      - name: "🏷️ Resolve Version"
+        id: resolve
+        shell: sh
+        env:
+          INPUT_SEMVER_STRATEGY: ${{ inputs.semver_strategy }}
+          UPSTREAM_REPOSITORY: ${{ inputs.upstream_repository }}
+          UPSTREAM_VERSION: ${{ steps.upstream_info.outputs.upstream_version }}
+          UPSTREAM_VALID: ${{ steps.semver_info.outputs.is_valid_semver_a }}
+          UPSTREAM_NEWER: ${{ steps.semver_info.outputs.is_greater_a }}
+        run: |
+          set -eu
+          semver_strategy="${INPUT_SEMVER_STRATEGY}"
+          if [ -n "${UPSTREAM_REPOSITORY}" ]; then
+            if [ "${UPSTREAM_VALID}" != 'true' ]; then
+              echo "Invalid upstream version: ${UPSTREAM_VERSION}" >&2
+              exit 1
+            fi
+            if [ "${UPSTREAM_NEWER}" = 'true' ]; then
+              semver_strategy=''
+            fi
+          fi
+          {
+            printf 'semver_strategy=%s\n' "${semver_strategy}"
+            printf 'upstream_version=%s\n' "${UPSTREAM_VERSION}"
+          } >> "${GITHUB_OUTPUT}"
+          printf 'latest_tag=%s\n' "${{ steps.latest_tag.outputs.latest_tag || 'none' }}"
+          printf 'semver_strategy=%s\n' "${semver_strategy:-none}"
+          printf 'upstream_version=%s\n' "${UPSTREAM_VERSION:-none}"
+
+  mode:
+    needs:
+      - version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      dry_run: ${{ steps.release_info.outputs.dry_run }}
+    steps:
+      - name: "🧑‍💻 Checkout"
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - name: "🏷️ Release Mode"
+        id: release_info
+        shell: sh
+        run: |
+          set -eu
+          case "${{ needs.version.outputs.semver_strategy }}" in
+            snapshot)
+              dry_run=false
+              ;;
+            '')
+              dry_run=true
+              if [ "${{ inputs.force }}" = "true" ]; then
+                dry_run=false
+              elif [ -n "${{ needs.version.outputs.upstream_version }}" ]; then
+                if ! git rev-parse -q --verify "refs/tags/${{ needs.version.outputs.upstream_version }}" >/dev/null; then
+                  dry_run=false
+                fi
+              else
+                latest_tag=$(git tag --merged HEAD --sort=-creatordate | sed -n '1p')
+                if [ -z "${latest_tag}" ] || ! git diff --quiet "${latest_tag}"..HEAD -- pom.xml src; then
+                  dry_run=false
+                fi
+              fi
+              ;;
+            *)
+              dry_run=false
+              ;;
+          esac
+
+          if [ "${{ inputs.dry_run }}" = "true" ] || [ "${GITHUB_REF}" != "refs/heads/${{ github.event.repository.default_branch }}" ]; then
+            dry_run=true
+          fi
+
+          printf 'dry_run=%s\n' "${dry_run}" >> "${GITHUB_OUTPUT}"
+          printf 'dry_run=%s\n' "${dry_run}"
+          printf 'semver_strategy=%s\n' "${{ needs.version.outputs.semver_strategy }}"
+          printf 'upstream_version=%s\n' "${{ needs.version.outputs.upstream_version }}"
+
+  build:
+    needs:
+      - mode
+      - version
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/wc_java_build_common.yml
+    with:
+      ref: ${{ github.sha }}
+      semver_strategy: ${{ needs.version.outputs.semver_strategy }}
+      upstream_version: ${{ needs.version.outputs.upstream_version }}
+      dry_run: ${{ needs.mode.outputs.dry_run == 'true' }}
+      upload_artifact: true

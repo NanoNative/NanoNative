@@ -1,0 +1,131 @@
+name: 🏷️ CD · Weekly Releases
+
+on:
+  schedule:
+    - cron: '0 16 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Dry run.
+        required: true
+        default: true
+        type: boolean
+
+permissions: {}
+
+concurrency:
+  group: weekly-releases
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ secrets.BOT_TOKEN }}
+    steps:
+      - name: "🔎 Discover"
+        shell: sh
+        run: |
+          set -eu
+          organization="${GITHUB_REPOSITORY_OWNER}"
+          releases_file="${RUNNER_TEMP}/releases.tsv"
+          workflow_file="${RUNNER_TEMP}/workflow.yml"
+          : > "${releases_file}"
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "BOT_TOKEN is not configured; weekly releases are disabled."
+            exit 0
+          fi
+
+          gh repo list "${organization}" --limit 1000 --json nameWithOwner,isArchived,isFork,defaultBranchRef \
+            --jq '.[] | select(.isArchived == false and .isFork == false and .defaultBranchRef != null) | [.nameWithOwner, .defaultBranchRef.name] | @tsv' \
+            | while IFS="$(printf '\t')" read -r repository default_branch; do
+                if ! workflow_paths=$(gh api "repos/${repository}/contents/.github/workflows?ref=${default_branch}" --jq '.[] | select(.type == "file") | select((.name | endswith(".yml")) or (.name | endswith(".yaml"))) | .path' 2>/dev/null); then
+                  continue
+                fi
+
+                matches=0
+                for workflow_path in ${workflow_paths}; do
+                  if ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/${repository}/contents/${workflow_path}?ref=${default_branch}" > "${workflow_file}" 2>/dev/null; then
+                    continue
+                  fi
+                  if ! grep -Eq '^[[:space:]]*# nanonative-release:[[:space:]]*true[[:space:]]*$' "${workflow_file}"; then
+                    continue
+                  fi
+                  matches=$((matches + 1))
+                  printf '%s\t%s\t%s\n' "${repository}" "${default_branch}" "${workflow_path}" >> "${releases_file}"
+                done
+
+                if [ "${matches}" -gt 1 ]; then
+                  echo "Skipping ${repository}: multiple release markers."
+                  next_releases_file="${releases_file}.next"
+                  awk -F "$(printf '\\t')" -v repository="${repository}" '$1 != repository' "${releases_file}" > "${next_releases_file}"
+                  mv "${next_releases_file}" "${releases_file}"
+                fi
+              done
+
+      - name: "🏷️ Release"
+        shell: sh
+        run: |
+          set -eu
+          dry_run="${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}"
+          releases_file="${RUNNER_TEMP}/releases.tsv"
+          failures=0
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "BOT_TOKEN is not configured; weekly releases are disabled."
+            exit 0
+          fi
+
+          test -f "${releases_file}" || exit 0
+          while IFS="$(printf '\t')" read -r repository default_branch workflow_path; do
+            release_changed=false
+            workflow_file=${workflow_path##*/}
+            latest_tag=$(gh release list --repo "${repository}" --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')
+
+            if [ -z "${latest_tag}" ]; then
+              release_changed=true
+            else
+              checkout=$(mktemp -d "${RUNNER_TEMP}/release.XXXXXX")
+              files="${checkout}/files"
+              git clone --quiet --filter=blob:none --depth=1 --branch "${default_branch}" "https://x-access-token:${GH_TOKEN}@github.com/${repository}.git" "${checkout}"
+              git -C "${checkout}" fetch --quiet --depth=1 origin "refs/tags/${latest_tag}:refs/tags/${latest_tag}"
+              git -C "${checkout}" diff --name-only "${latest_tag}..HEAD" > "${files}"
+
+              while IFS= read -r path; do
+                case "${path}" in
+                  README*|*/README*|docs/*|*/docs/*|*.md|.github/*|.editorconfig|.gitignore|LICENSE*|*/LICENSE*|\
+                  .mvn/*|mvnw|mvnw.cmd|gradle/wrapper/*|gradlew|gradlew.bat|.nvmrc|.tool-versions|global.json|\
+                  test/*|tests/*|spec/*|specs/*|*/test/*|*/tests/*|*/spec/*|*/specs/*|\
+                  example/*|examples/*|benchmark/*|benchmarks/*|*/example/*|*/examples/*|*/benchmark/*|*/benchmarks/*)
+                    ;;
+                  *)
+                    release_changed=true
+                    break
+                    ;;
+                esac
+              done < "${files}"
+              rm -rf "${checkout}"
+            fi
+
+            printf 'repository=%s\n' "${repository}"
+            printf 'latest_tag=%s\n' "${latest_tag:-none}"
+            printf 'release_changed=%s\n' "${release_changed}"
+
+            if [ "${release_changed}" = "false" ]; then
+              continue
+            fi
+            if [ "${dry_run}" = "true" ]; then
+              echo "Would dispatch ${repository}:${workflow_file}@${default_branch}."
+            elif gh workflow run "${workflow_file}" --repo "${repository}" --ref "${default_branch}"; then
+              echo "Dispatched ${repository}:${workflow_file}@${default_branch}."
+            else
+              echo "Could not dispatch ${repository}:${workflow_file}@${default_branch}." >&2
+              failures=$((failures + 1))
+            fi
+          done < "${releases_file}"
+
+          test "${failures}" -eq 0

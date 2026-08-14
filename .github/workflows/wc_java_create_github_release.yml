@@ -1,0 +1,82 @@
+name: 🏷️ CD · GitHub Release
+
+on:
+  workflow_call:
+    inputs:
+      run_id:
+        description: Build run.
+        required: false
+        default: ''
+        type: string
+      commit_sha:
+        description: Build commit.
+        required: true
+        type: string
+      version:
+        description: Release version.
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: "📥 Download Build Artifact"
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: build-workspace
+          path: ${{ github.workspace }}
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.run_id || github.run_id }}
+
+      - name: "📦 Prepare Release Assets"
+        shell: sh
+        run: |
+          set -eu
+          assets_dir="${RUNNER_TEMP}/release-assets"
+          mkdir -p "${assets_dir}"
+          if [ -d release-assets ]; then
+            find release-assets -maxdepth 1 -type f -exec cp {} "${assets_dir}/" \;
+          fi
+          find target -maxdepth 1 -type f -name "*-${{ inputs.version }}*.jar" -exec cp {} "${assets_dir}/" \;
+          test -n "$(find "${assets_dir}" -maxdepth 1 -type f -name '*.jar' -print -quit)"
+
+      - name: "📥 Download Release Assets"
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: release-assets-*
+          path: ${{ runner.temp }}/release-assets
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.run_id || github.run_id }}
+
+      - name: "🧩 Prepare Executable Assets"
+        shell: sh
+        run: |
+          set -eu
+          assets_dir="${RUNNER_TEMP}/release-assets"
+          find "${assets_dir}" -maxdepth 1 -type f \( -name '*.native' -o -name '*.exe' \) -exec chmod +x {} \;
+
+      - name: "🏷️ GitHub Release [${{ inputs.version }}]"
+        shell: sh
+        run: |
+          set -eu
+          if GH_TOKEN="${{ github.token }}" gh release view "${{ inputs.version }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "GitHub release already exists for ${{ inputs.version }}"
+          else
+            case "${{ inputs.version }}" in
+              *-*)
+                GH_TOKEN="${{ github.token }}" gh release create "${{ inputs.version }}" --repo "${{ github.repository }}" --target "${{ inputs.commit_sha }}" --generate-notes --prerelease --latest=false
+                ;;
+              *)
+                GH_TOKEN="${{ github.token }}" gh release create "${{ inputs.version }}" --repo "${{ github.repository }}" --target "${{ inputs.commit_sha }}" --generate-notes --latest
+                ;;
+            esac
+          fi
+          GH_TOKEN="${{ github.token }}" gh release upload "${{ inputs.version }}" "${RUNNER_TEMP}/release-assets"/* --repo "${{ github.repository }}" --clobber

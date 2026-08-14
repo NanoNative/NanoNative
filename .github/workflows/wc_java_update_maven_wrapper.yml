@@ -1,0 +1,61 @@
+name: 🛠️ CI · Maven Wrapper
+
+on:
+  workflow_call:
+    inputs:
+      dry_run:
+        description: Dry run.
+        required: false
+        default: false
+        type: boolean
+
+permissions: {}
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+    steps:
+      - name: "🧑‍💻 Checkout"
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: "🛠️ Update"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: sh
+        run: |
+          set -eu
+          branch='bot/maintenance-maven-wrapper'
+          ./mvnw -B -N wrapper:wrapper
+          printf 'branch=%s\n' "${branch}"
+
+          if git diff --quiet -- .mvn/wrapper mvnw mvnw.cmd; then
+            echo "Maven Wrapper is current."
+            exit 0
+          fi
+          if gh pr list --repo "${GITHUB_REPOSITORY}" --head "${branch}" --state open --json number --jq '.[0].number // empty' | grep -q .; then
+            echo "${branch} already has an open pull request."
+            exit 0
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "Would create ${branch}."
+            exit 0
+          fi
+
+          git config user.name 'Kira Bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "${branch}"
+          git add -- .mvn/wrapper mvnw
+          if [ -e mvnw.cmd ]; then
+            git add -- mvnw.cmd
+          fi
+          git commit -m 'build: update Maven Wrapper'
+          git push origin "${branch}"
+          gh pr create --repo "${GITHUB_REPOSITORY}" --base "${{ github.event.repository.default_branch }}" --head "${branch}" --title 'build: update Maven Wrapper' --body 'Updates Maven Wrapper.'
+          gh workflow run build-pr.yml --repo "${GITHUB_REPOSITORY}" --ref "${branch}" -f ref="${branch}"

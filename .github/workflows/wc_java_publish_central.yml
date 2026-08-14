@@ -1,0 +1,102 @@
+name: 📦 CD · Publish Central
+
+on:
+  workflow_call:
+    inputs:
+      run_id:
+        description: Build run.
+        required: false
+        default: ''
+        type: string
+    secrets:
+      CENTRAL_USER:
+        required: true
+      CENTRAL_PASS:
+        required: true
+      GPG_SIGNING_KEY:
+        required: true
+      GPG_PASSPHRASE:
+        required: true
+
+permissions: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+    environment:
+      name: maven-central
+      url: https://central.sonatype.com
+    steps:
+      - name: "🔐 Check Publish Secrets"
+        shell: sh
+        env:
+          CENTRAL_USER: ${{ secrets.CENTRAL_USER }}
+          CENTRAL_PASS: ${{ secrets.CENTRAL_PASS }}
+          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -eu
+          : "${CENTRAL_USER:?Missing required secret: CENTRAL_USER}"
+          : "${CENTRAL_PASS:?Missing required secret: CENTRAL_PASS}"
+          : "${GPG_SIGNING_KEY:?Missing required secret: GPG_SIGNING_KEY}"
+          : "${GPG_PASSPHRASE:?Missing required secret: GPG_PASSPHRASE}"
+
+      - name: "📥 Download Build Artifact"
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: build-workspace
+          path: ${{ github.workspace }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.run_id || github.run_id }}
+
+      - name: "🔧 Restore Maven Wrapper"
+        shell: sh
+        run: chmod +x "${GITHUB_WORKSPACE}/mvnw"
+
+      - name: "🔍 Read Java Info"
+        id: java_info
+        uses: YunaBraska/java-info-action@11a434ffbf6bb3357363d1933be71a4076a90a6b # v3
+
+      - name: "☕ Setup Java [${{ steps.java_info.outputs.java_version }}]"
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          distribution: temurin
+          java-version: ${{ steps.java_info.outputs.java_version }}
+          cache: maven
+          server-id: central
+          server-username: CENTRAL_USER
+          server-password: CENTRAL_PASS
+          gpg-private-key: ${{ secrets.GPG_SIGNING_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+        env:
+          CENTRAL_USER: ${{ secrets.CENTRAL_USER }}
+          CENTRAL_PASS: ${{ secrets.CENTRAL_PASS }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: "🔐 Configure GitHub Packages"
+        shell: sh
+        run: |
+          set -eu
+          sed "/<\\/servers>/i\\
+              <server>\\
+                <id>github</id>\\
+                <username>\${env.GITHUB_ACTOR}</username>\\
+                <password>\${env.GITHUB_TOKEN}</password>\\
+              </server>" "${HOME}/.m2/settings.xml" > "${HOME}/.m2/settings.xml.tmp"
+          mv "${HOME}/.m2/settings.xml.tmp" "${HOME}/.m2/settings.xml"
+
+      - name: "🚀 Maven Central"
+        env:
+          CENTRAL_USER: ${{ secrets.CENTRAL_USER }}
+          CENTRAL_PASS: ${{ secrets.CENTRAL_PASS }}
+          GITHUB_TOKEN: ${{ github.token }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        shell: sh
+        run: |
+          set -eu
+          ${{ steps.java_info.outputs.cmd }} -B -Pcentral -DskipTests deploy
