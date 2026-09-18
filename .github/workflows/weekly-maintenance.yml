@@ -62,12 +62,12 @@ jobs:
                 continue
               fi
               if ! gh pr checks "${pr}" --repo "${repository}" >/dev/null 2>&1; then
-                formula_check=''
-                if [ "${repository}" = "${GITHUB_REPOSITORY_OWNER}/homebrew-tap" ] && [ "${branch}" = 'bot/maintenance-homebrew' ]; then
-                  formula_check=$(gh run list --repo "${repository}" --workflow build-pr.yml --commit "${commit_sha}" --event workflow_dispatch --status completed --limit 1 --json conclusion --jq '.[0].conclusion // empty')
+                maintenance_check=''
+                if printf '%s\n' "${branch}" | grep -Eq '^bot/maintenance-'; then
+                  maintenance_check=$(gh run list --repo "${repository}" --workflow build-pr.yml --commit "${commit_sha}" --event workflow_dispatch --status completed --limit 1 --json conclusion --jq '.[0].conclusion // empty')
                 fi
-                if [ "${formula_check}" = 'success' ]; then
-                  echo "${repository}#${pr} has a green formula check."
+                if [ "${maintenance_check}" = 'success' ]; then
+                  echo "${repository}#${pr} has a green maintenance check."
                 else
                   echo "${repository}#${pr} is not green; leaving it open."
                   continue

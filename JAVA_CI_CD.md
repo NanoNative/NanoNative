@@ -32,9 +32,11 @@ GitHub releases exist only for a successful non-snapshot version.
 - Attach sources and Javadocs in the normal build. A JAR project publishes its
   POM, JAR, sources JAR, and Javadocs JAR; a POM project publishes only its POM.
 - Central uses profile `central`, GPG, and
-  `central-publishing-maven-plugin` `0.11.0` with `autoPublish` and
-  `waitUntil` set to `published`. The public coordinate therefore exists before
-  a tag or GitHub release is created.
+  `central-publishing-maven-plugin` `0.11.0` with `autoPublish`. Maven can
+  return after validation, so the shared publisher extracts Central's deployment
+  ID and polls its authoritative state for up to five minutes. Only `PUBLISHED`
+  succeeds; a tag or GitHub release therefore cannot claim a coordinate that
+  Central has merely validated.
 
 ## Standard repository workflows
 

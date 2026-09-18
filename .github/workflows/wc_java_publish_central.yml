@@ -99,4 +99,33 @@ jobs:
         shell: sh
         run: |
           set -eu
-          ${{ steps.java_info.outputs.cmd }} -B -Pcentral -DskipTests deploy
+          maven_log=$(mktemp)
+          trap 'rm -f "${maven_log}"' EXIT
+          # Maven returns after validation; Central is authoritative for publication.
+          ${{ steps.java_info.outputs.cmd }} -B -Pcentral -DskipTests deploy > "${maven_log}" 2>&1 || true
+          cat "${maven_log}"
+          deployment_id=$(sed -n 's/.*deploymentId: \([0-9A-Fa-f-][0-9A-Fa-f-]*\).*/\1/p' "${maven_log}" | tail -1)
+          if [ -z "${deployment_id}" ]; then
+            printf 'Maven Central deployment identifier was not reported.\n' >&2
+            exit 1
+          fi
+          central_token=$(printf '%s:%s' "${CENTRAL_USER}" "${CENTRAL_PASS}" | base64 | tr -d '\n')
+          attempt=1
+          while [ "${attempt}" -le 60 ]; do
+            status=$(curl -fsS -X POST -H "Authorization: Bearer ${central_token}" "https://central.sonatype.com/api/v1/publisher/status?id=${deployment_id}" 2>/dev/null || true)
+            state=$(printf '%s' "${status}" | tr '\n' ' ' | sed -n 's/.*"deploymentState"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+            case "${state}" in
+              PUBLISHED)
+                printf 'Maven Central published deployment %s.\n' "${deployment_id}"
+                exit 0
+                ;;
+              FAILED)
+                printf '%s\n' "${status}" >&2
+                exit 1
+                ;;
+            esac
+            sleep 5
+            attempt=$((attempt + 1))
+          done
+          printf 'Maven Central did not publish deployment %s within five minutes.\n' "${deployment_id}" >&2
+          exit 1

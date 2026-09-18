@@ -80,7 +80,9 @@ jobs:
         run: |
           set -eu
           date_version=$(date -u '+%Y.%m.%d' | sed -E 's/\.0+([0-9])/\.\1/g')
-          printf 'date_version=%s\n' "${date_version}" >> "${GITHUB_OUTPUT}"
+          {
+            printf 'date_version=%s\n' "${date_version}"
+          } >> "${GITHUB_OUTPUT}"
           printf 'date_version=%s\n' "${date_version}"
 
       - name: "🏷️ Read Latest Tag"

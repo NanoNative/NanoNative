@@ -56,7 +56,9 @@ architectures with Homebrew's normal conditions.
 - `BOT_TOKEN` belongs only in this repository. Source repositories use their
   scoped action token for their own release work.
 - Weekly maintenance runs Monday at 06:00 UTC. It merges non-draft, green
-  `dependabot/*` and `bot/maintenance-*` PRs.
+  `dependabot/*` and `bot/maintenance-*` PRs. GitHub can report an automatic
+  maintenance PR as `UNKNOWN` or `UNSTABLE`; the scheduler then requires the
+  explicit green `build-pr.yml` run for that exact commit before merging.
 - Weekly release discovery runs Monday at 16:00 UTC. It dispatches work and
   does not wait for it.
 - Exactly one `# nanonative-release: true` workflow marker opt a repository

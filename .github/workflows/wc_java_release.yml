@@ -101,7 +101,8 @@ jobs:
         env:
           INPUT_SEMVER_STRATEGY: ${{ inputs.semver_strategy }}
           UPSTREAM_REPOSITORY: ${{ inputs.upstream_repository }}
-          UPSTREAM_VERSION: ${{ steps.upstream_info.outputs.upstream_version }}
+          UPSTREAM_RAW_VERSION: ${{ steps.upstream_info.outputs.upstream_version }}
+          UPSTREAM_VERSION: ${{ steps.semver_info.outputs.clean_semver_a }}
           UPSTREAM_VALID: ${{ steps.semver_info.outputs.is_valid_semver_a }}
           UPSTREAM_NEWER: ${{ steps.semver_info.outputs.is_greater_a }}
         run: |
@@ -109,7 +110,7 @@ jobs:
           semver_strategy="${INPUT_SEMVER_STRATEGY}"
           if [ -n "${UPSTREAM_REPOSITORY}" ]; then
             if [ "${UPSTREAM_VALID}" != 'true' ]; then
-              echo "Invalid upstream version: ${UPSTREAM_VERSION}" >&2
+              printf 'Invalid upstream version: %s\n' "${UPSTREAM_RAW_VERSION}" >&2
               exit 1
             fi
             if [ "${UPSTREAM_NEWER}" = 'true' ]; then
@@ -172,7 +173,9 @@ jobs:
             dry_run=true
           fi
 
-          printf 'dry_run=%s\n' "${dry_run}" >> "${GITHUB_OUTPUT}"
+          {
+            printf 'dry_run=%s\n' "${dry_run}"
+          } >> "${GITHUB_OUTPUT}"
           printf 'dry_run=%s\n' "${dry_run}"
           printf 'semver_strategy=%s\n' "${{ needs.version.outputs.semver_strategy }}"
           printf 'upstream_version=%s\n' "${{ needs.version.outputs.upstream_version }}"
