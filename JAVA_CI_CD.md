@@ -213,8 +213,9 @@ jobs:
 ```
 
 Dependabot handles Maven dependencies and actions. Maven Wrapper is separate:
-Dependabot does not own its files, so `mvn wrapper:wrapper` updates itself and
-opens `bot/maintenance-maven-wrapper` only when files actually changed.
+Dependabot does not own its files, so the maintenance job uses the current
+GitHub runner Maven to update it and opens `bot/maintenance-maven-wrapper`
+only when files actually changed.
 
 ## Versioning
 

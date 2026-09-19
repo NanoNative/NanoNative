@@ -102,7 +102,6 @@ jobs:
             git clone --quiet --depth=1 --branch "${default_branch}" "https://x-access-token:${GH_TOKEN}@github.com/${repository}.git" "${checkout}"
             (
               cd "${checkout}"
-              ./mvnw -B -N wrapper:wrapper
               ./mvnw -B verify
             )
 

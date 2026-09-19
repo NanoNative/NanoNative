@@ -32,7 +32,7 @@ jobs:
         run: |
           set -eu
           branch='bot/maintenance-maven-wrapper'
-          ./mvnw -B -N wrapper:wrapper
+          mvn -B -N wrapper:wrapper
           printf 'branch=%s\n' "${branch}"
 
           if git diff --quiet -- .mvn/wrapper mvnw mvnw.cmd; then
