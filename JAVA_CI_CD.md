@@ -32,9 +32,10 @@ GitHub releases exist only for a successful non-snapshot version.
 - Attach sources and Javadocs in the normal build. A JAR project publishes its
   POM, JAR, sources JAR, and Javadocs JAR; a POM project publishes only its POM.
 - Central uses profile `central`, GPG, and
-  `central-publishing-maven-plugin` `0.11.0` with `autoPublish`. Maven can
-  return after validation, so the shared publisher extracts Central's deployment
-  ID and polls its authoritative state for up to five minutes. Only `PUBLISHED`
+  `central-publishing-maven-plugin` `0.11.0` with `autoPublish`. A snapshot
+  deploys to Central's snapshot endpoint and succeeds when Maven succeeds.
+  Maven can return after validating a stable deploy, so the shared publisher
+  polls Central's authoritative state for up to five minutes. Only `PUBLISHED`
   succeeds; a tag or GitHub release therefore cannot claim a coordinate that
   Central has merely validated.
 
@@ -221,13 +222,15 @@ opens `bot/maintenance-maven-wrapper` only when files actually changed.
 | --- | --- |
 | Normal Java release | UTC date: `YYYY.M.D` |
 | `snapshot`, `rc`, `major`, `minor`, `patch` strategy | Matching `next_<strategy>` output of `semver-info-action` |
-| Upstream newer than latest local tag | Exact upstream version |
+| Upstream newer than latest local tag without a strategy | Exact upstream version |
 | Dry run, non-default branch, or no production changes | `next_snapshot` |
 
 The Semver base is the latest tag by tag creation time or the upstream version.
 With no tag, it is `0.0.1`. Date versions have no leading zero, so Semver tools
 accept them. An upstream release is read from its public GitHub release; the
 caller sets `upstream_repository` and normally uses `semver_strategy: snapshot`.
+An explicit strategy always wins; only a strategy-free upstream release uses its
+exact version.
 
 ## Native and Docker
 
