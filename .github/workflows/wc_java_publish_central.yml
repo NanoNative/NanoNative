@@ -78,27 +78,20 @@ jobs:
           CENTRAL_PASS: ${{ secrets.CENTRAL_PASS }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
-      - name: "🔐 Configure GitHub Packages"
-        shell: sh
-        run: |
-          set -eu
-          sed "/<\\/servers>/i\\
-              <server>\\
-                <id>github</id>\\
-                <username>\${env.GITHUB_ACTOR}</username>\\
-                <password>\${env.GITHUB_TOKEN}</password>\\
-              </server>" "${HOME}/.m2/settings.xml" > "${HOME}/.m2/settings.xml.tmp"
-          mv "${HOME}/.m2/settings.xml.tmp" "${HOME}/.m2/settings.xml"
-
       - name: "🚀 Maven Central"
         env:
           CENTRAL_USER: ${{ secrets.CENTRAL_USER }}
           CENTRAL_PASS: ${{ secrets.CENTRAL_PASS }}
-          GITHUB_TOKEN: ${{ github.token }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         shell: sh
         run: |
           set -eu
+          case "${{ steps.java_info.outputs.project_version }}" in
+            *-SNAPSHOT)
+              ${{ steps.java_info.outputs.cmd }} -B -Pcentral -DskipTests -DcentralSnapshotsUrl=https://central.sonatype.com/repository/maven-snapshots/ deploy
+              exit 0
+              ;;
+          esac
           maven_log=$(mktemp)
           trap 'rm -f "${maven_log}"' EXIT
           # Maven returns after validation; Central is authoritative for publication.

@@ -104,7 +104,6 @@ jobs:
           UPSTREAM_RAW_VERSION: ${{ steps.upstream_info.outputs.upstream_version }}
           UPSTREAM_VERSION: ${{ steps.semver_info.outputs.clean_semver_a }}
           UPSTREAM_VALID: ${{ steps.semver_info.outputs.is_valid_semver_a }}
-          UPSTREAM_NEWER: ${{ steps.semver_info.outputs.is_greater_a }}
         run: |
           set -eu
           semver_strategy="${INPUT_SEMVER_STRATEGY}"
@@ -112,9 +111,6 @@ jobs:
             if [ "${UPSTREAM_VALID}" != 'true' ]; then
               printf 'Invalid upstream version: %s\n' "${UPSTREAM_RAW_VERSION}" >&2
               exit 1
-            fi
-            if [ "${UPSTREAM_NEWER}" = 'true' ]; then
-              semver_strategy=''
             fi
           fi
           {
