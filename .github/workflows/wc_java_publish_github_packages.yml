@@ -50,6 +50,17 @@ jobs:
           server-username: GITHUB_ACTOR
           server-password: GITHUB_TOKEN
 
+      - name: "🔐 Configure Maven Repository"
+        shell: sh
+        run: |
+          set -eu
+          # Maven 3.10 sends credentials only to declared repository origins.
+          sed -e "/<id>github<\\/id>/a\\
+                <repositoryOrigins>\\
+                  <repositoryOrigin>https://maven.pkg.github.com</repositoryOrigin>\\
+                </repositoryOrigins>" "${HOME}/.m2/settings.xml" > "${HOME}/.m2/settings.xml.tmp"
+          mv "${HOME}/.m2/settings.xml.tmp" "${HOME}/.m2/settings.xml"
+
       - name: "🚀 GitHub Packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

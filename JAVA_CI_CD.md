@@ -32,12 +32,11 @@ GitHub releases exist only for a successful non-snapshot version.
 - Attach sources and Javadocs in the normal build. A JAR project publishes its
   POM, JAR, sources JAR, and Javadocs JAR; a POM project publishes only its POM.
 - Central uses profile `central`, GPG, and
-  `central-publishing-maven-plugin` `0.11.0` with `autoPublish`. A snapshot
-  deploys to Central's snapshot endpoint and succeeds when Maven succeeds.
-  Maven can return after validating a stable deploy, so the shared publisher
-  polls Central's authoritative state for up to five minutes. Only `PUBLISHED`
-  succeeds; a tag or GitHub release therefore cannot claim a coordinate that
-  Central has merely validated.
+  `central-publishing-maven-plugin` `0.11.0` with `autoPublish` and
+  `waitUntil` set to `validated`. A snapshot deploys to Central's snapshot
+  endpoint and succeeds when Maven succeeds. A stable release succeeds only
+  after Central accepts and validates it, then Central publishes it
+  asynchronously. The shared publisher adds no second status poll or upload.
 
 ## Standard repository workflows
 
@@ -67,7 +66,7 @@ jobs:
       packages: read
     uses: NanoNative/NanoNative/.github/workflows/wc_java_build_common.yml@<SHA>
     with:
-      ref: ${{ inputs.ref || github.sha }}
+      ref: ${{ github.event.inputs.ref || github.sha }}
 ```
 
 ### Snapshot on merge
