@@ -37,6 +37,10 @@ GitHub releases exist only for a successful non-snapshot version.
   endpoint and succeeds when Maven succeeds. A stable release succeeds only
   after Central accepts and validates it, then Central publishes it
   asynchronously. The shared publisher adds no second status poll or upload.
+  It uses Maven 3.9.16 only for Central because
+  `central-publishing-maven-plugin` 0.11.0 produces an invalid
+  `maven-metadata-local.xml` bundle with Maven 3.10. Project wrappers remain
+  current for normal builds.
 
 ## Standard repository workflows
 

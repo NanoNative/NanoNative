@@ -89,6 +89,20 @@ jobs:
                 </repositoryOrigins>" "${HOME}/.m2/settings.xml" > "${HOME}/.m2/settings.xml.tmp"
           mv "${HOME}/.m2/settings.xml.tmp" "${HOME}/.m2/settings.xml"
 
+      - name: "Setup Maven [3.9.16]"
+        shell: sh
+        run: |
+          set -eu
+          archive="${RUNNER_TEMP}/apache-maven-3.9.16-bin.tar.gz"
+          curl --fail --location --silent --show-error \
+            'https://dlcdn.apache.org/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz' \
+            --output "${archive}"
+          printf '%s  %s\n' \
+            '831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6' \
+            "${archive}" | sha512sum --check --status
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}"
+          "${RUNNER_TEMP}/apache-maven-3.9.16/bin/mvn" --version
+
       - name: "🚀 Maven Central"
         env:
           CENTRAL_USER: ${{ secrets.CENTRAL_USER }}
@@ -99,9 +113,10 @@ jobs:
           set -eu
           case "${{ steps.java_info.outputs.project_version }}" in
             *-SNAPSHOT)
-              ${{ steps.java_info.outputs.cmd }} -B -Pcentral -DskipTests -DcentralSnapshotsUrl=https://central.sonatype.com/repository/maven-snapshots/ deploy
+              "${RUNNER_TEMP}/apache-maven-3.9.16/bin/mvn" -B -Pcentral -DskipTests -DcentralSnapshotsUrl=https://central.sonatype.com/repository/maven-snapshots/ deploy
               exit 0
               ;;
           esac
-          # autoPublish continues after the plugin has validated the deployment.
-          ${{ steps.java_info.outputs.cmd }} -B -Pcentral -DskipTests deploy
+          # Maven 3.10 writes maven-metadata-local.xml into Central's staging directory.
+          # central-publishing-maven-plugin 0.11.0 then submits that invalid bundle.
+          "${RUNNER_TEMP}/apache-maven-3.9.16/bin/mvn" -B -Pcentral -DskipTests deploy
