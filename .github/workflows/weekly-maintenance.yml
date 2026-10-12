@@ -77,6 +77,8 @@ jobs:
                 echo "Would merge ${repository}#${pr}."
               elif gh pr merge "${pr}" --repo "${repository}" --squash --delete-branch; then
                 echo "Merged ${repository}#${pr}."
+              elif [ "$(gh pr view "${pr}" --repo "${repository}" --json state,mergeStateStatus --jq '.state + ":" + .mergeStateStatus')" = 'OPEN:BEHIND' ]; then
+                echo "${repository}#${pr} changed while another pull request merged; leaving it for refreshed checks."
               else
                 echo "Could not merge ${repository}#${pr}." >&2
                 failures=$((failures + 1))
