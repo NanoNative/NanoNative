@@ -41,25 +41,15 @@ jobs:
         uses: YunaBraska/java-info-action@11a434ffbf6bb3357363d1933be71a4076a90a6b # v3
 
       - name: "☕ Setup Java [${{ steps.java_info.outputs.java_version }}]"
-        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: ${{ steps.java_info.outputs.java_version }}
           cache: maven
           server-id: github
-          server-username: GITHUB_ACTOR
-          server-password: GITHUB_TOKEN
-
-      - name: "🔐 Configure Maven Repository"
-        shell: sh
-        run: |
-          set -eu
-          # Maven 3.10 sends credentials only to declared repository origins.
-          sed -e "/<id>github<\\/id>/a\\
-                <repositoryOrigins>\\
-                  <repositoryOrigin>https://maven.pkg.github.com</repositoryOrigin>\\
-                </repositoryOrigins>" "${HOME}/.m2/settings.xml" > "${HOME}/.m2/settings.xml.tmp"
-          mv "${HOME}/.m2/settings.xml.tmp" "${HOME}/.m2/settings.xml"
+          server-username-env-var: GITHUB_ACTOR
+          server-password-env-var: GITHUB_TOKEN
+          mvn-server-repository-origins: github:https://maven.pkg.github.com
 
       - name: "🚀 GitHub Packages"
         env:

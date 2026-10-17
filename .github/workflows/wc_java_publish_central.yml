@@ -63,31 +63,21 @@ jobs:
         uses: YunaBraska/java-info-action@11a434ffbf6bb3357363d1933be71a4076a90a6b # v3
 
       - name: "☕ Setup Java [${{ steps.java_info.outputs.java_version }}]"
-        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: ${{ steps.java_info.outputs.java_version }}
           cache: maven
           server-id: central
-          server-username: CENTRAL_USER
-          server-password: CENTRAL_PASS
+          server-username-env-var: CENTRAL_USER
+          server-password-env-var: CENTRAL_PASS
+          mvn-server-repository-origins: central:https://central.sonatype.com
           gpg-private-key: ${{ secrets.GPG_SIGNING_KEY }}
-          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+          gpg-passphrase-env-var: MAVEN_GPG_PASSPHRASE
         env:
           CENTRAL_USER: ${{ secrets.CENTRAL_USER }}
           CENTRAL_PASS: ${{ secrets.CENTRAL_PASS }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-
-      - name: "🔐 Configure Maven Central"
-        shell: sh
-        run: |
-          set -eu
-          # Maven 3.10 scopes credentials to known repository origins.
-          sed "/<id>central<\\/id>/a\\
-                <repositoryOrigins>\\
-                  <repositoryOrigin>https://central.sonatype.com</repositoryOrigin>\\
-                </repositoryOrigins>" "${HOME}/.m2/settings.xml" > "${HOME}/.m2/settings.xml.tmp"
-          mv "${HOME}/.m2/settings.xml.tmp" "${HOME}/.m2/settings.xml"
 
       - name: "Setup Maven [3.9.16]"
         shell: sh

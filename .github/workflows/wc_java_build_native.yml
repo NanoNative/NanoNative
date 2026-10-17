@@ -68,7 +68,7 @@ jobs:
         uses: YunaBraska/java-info-action@11a434ffbf6bb3357363d1933be71a4076a90a6b # v3
 
       - name: "☕ Setup Java [${{ matrix.kind == 'host' && '25' || steps.java_info.outputs.java_version }}]"
-        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: ${{ matrix.distribution }}
           java-version: ${{ matrix.kind == 'host' && '25' || steps.java_info.outputs.java_version }}

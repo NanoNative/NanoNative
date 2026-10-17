@@ -37,6 +37,9 @@ GitHub releases exist only for a successful non-snapshot version.
   endpoint and succeeds when Maven succeeds. A stable release succeeds only
   after Central accepts and validates it, then Central publishes it
   asynchronously. The shared publisher adds no second status poll or upload.
+  `actions/setup-java` declares the exact credential origin, so Maven 3.10
+  sends the Central credential only to `https://central.sonatype.com` and the
+  GitHub Packages credential only to `https://maven.pkg.github.com`.
   It uses Maven 3.9.16 only for Central because
   `central-publishing-maven-plugin` 0.11.0 produces an invalid
   `maven-metadata-local.xml` bundle with Maven 3.10. Project wrappers remain
