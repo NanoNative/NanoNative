@@ -32,7 +32,7 @@ GitHub releases exist only for a successful non-snapshot version.
 - Attach sources and Javadocs in the normal build. A JAR project publishes its
   POM, JAR, sources JAR, and Javadocs JAR; a POM project publishes only its POM.
 - Central uses profile `central`, GPG, and
-  `central-publishing-maven-plugin` `0.11.0` with `autoPublish` and
+  `central-publishing-maven-plugin` `0.12.0` with `autoPublish` and
   `waitUntil` set to `validated`. A snapshot deploys to Central's snapshot
   endpoint and succeeds when Maven succeeds. A stable release succeeds only
   after Central accepts and validates it, then Central publishes it
@@ -40,15 +40,15 @@ GitHub releases exist only for a successful non-snapshot version.
   `actions/setup-java` declares the exact credential origin, so Maven 3.10
   sends the Central credential only to `https://central.sonatype.com` and the
   GitHub Packages credential only to `https://maven.pkg.github.com`.
-  It uses Maven 3.9.16 only for Central because
-  `central-publishing-maven-plugin` 0.11.0 produces an invalid
-  `maven-metadata-local.xml` bundle with Maven 3.10. Project wrappers remain
-  current for normal builds.
+  The Central publisher uses each project's Maven Wrapper.
+  `central-publishing-maven-plugin` 0.12.0 removes Maven 3.10 local metadata
+  from the upload bundle.
 
 ## Standard repository workflows
 
 Each Java library has exactly these callers. Replace `<SHA>` with a full commit
-SHA from this repository, and omit a publisher the project does not use.
+SHA from this repository's default branch after its PR is merged, and omit a
+publisher the project does not use.
 
 ### Pull request
 
