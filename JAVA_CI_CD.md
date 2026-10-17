@@ -47,7 +47,8 @@ GitHub releases exist only for a successful non-snapshot version.
 ## Standard repository workflows
 
 Each Java library has exactly these callers. Replace `<SHA>` with a full commit
-SHA from this repository, and omit a publisher the project does not use.
+SHA from this repository's default branch after its PR is merged, and omit a
+publisher the project does not use.
 
 ### Pull request
 
