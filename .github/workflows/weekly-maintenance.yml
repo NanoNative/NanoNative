@@ -70,9 +70,12 @@ jobs:
                 if [ "${build_check}" = 'missing' ]; then
                   if [ "${dry_run}" = 'true' ]; then
                     echo "Would start the normal PR build for ${repository}#${pr}."
-                  else
-                    gh workflow run build-pr.yml --repo "${repository}" --ref "${branch}"
+                  elif ! gh workflow view build-pr.yml --repo "${repository}" --yaml 2>/dev/null | grep -q 'workflow_dispatch:'; then
+                    echo "${repository}#${pr} has no manually startable normal PR build; leaving it open."
+                  elif gh workflow run build-pr.yml --repo "${repository}" --ref "${branch}"; then
                     echo "Started the normal PR build for ${repository}#${pr}."
+                  else
+                    echo "Could not start the normal PR build for ${repository}#${pr}; leaving it open."
                   fi
                 else
                   echo "${repository}#${pr} has no successful normal PR build; leaving it open."
