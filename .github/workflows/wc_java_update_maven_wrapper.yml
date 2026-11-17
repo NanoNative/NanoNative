@@ -23,6 +23,7 @@ jobs:
       - name: "🧑‍💻 Checkout"
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
+          fetch-depth: 0
           ref: ${{ github.event.repository.default_branch }}
 
       - name: "🛠️ Update"
@@ -32,15 +33,41 @@ jobs:
         run: |
           set -eu
           branch='bot/maintenance-maven-wrapper'
+          default_branch='${{ github.event.repository.default_branch }}'
+          run_build() {
+            if [ "${{ inputs.dry_run }}" = 'true' ]; then
+              echo "Would dispatch ${branch}."
+            else
+              gh workflow run build-pr.yml --repo "${GITHUB_REPOSITORY}" --ref "${branch}" -f ref="${branch}"
+            fi
+          }
+
+          if gh pr list --repo "${GITHUB_REPOSITORY}" --head "${branch}" --state open --json number --jq '.[0].number // empty' | grep -q .; then
+            echo "${branch} already has an open pull request."
+            run_build
+            exit 0
+          fi
+
+          if git ls-remote --exit-code --heads origin "${branch}" >/dev/null 2>&1; then
+            git fetch --quiet origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
+            if git diff --quiet "origin/${default_branch}" "origin/${branch}"; then
+              echo "${branch} has no unmerged change."
+              exit 0
+            fi
+            if [ "${{ inputs.dry_run }}" = 'true' ]; then
+              echo "Would reopen ${branch}."
+            else
+              gh pr create --repo "${GITHUB_REPOSITORY}" --base "${default_branch}" --head "${branch}" --title 'build: update Maven Wrapper' --body 'Updates Maven Wrapper.'
+              run_build
+            fi
+            exit 0
+          fi
+
           mvn -B -N wrapper:wrapper
           printf 'branch=%s\n' "${branch}"
 
           if git diff --quiet -- .mvn/wrapper mvnw mvnw.cmd; then
             echo "Maven Wrapper is current."
-            exit 0
-          fi
-          if gh pr list --repo "${GITHUB_REPOSITORY}" --head "${branch}" --state open --json number --jq '.[0].number // empty' | grep -q .; then
-            echo "${branch} already has an open pull request."
             exit 0
           fi
           if [ "${{ inputs.dry_run }}" = "true" ]; then
@@ -57,5 +84,5 @@ jobs:
           fi
           git commit -m 'build: update Maven Wrapper'
           git push origin "${branch}"
-          gh pr create --repo "${GITHUB_REPOSITORY}" --base "${{ github.event.repository.default_branch }}" --head "${branch}" --title 'build: update Maven Wrapper' --body 'Updates Maven Wrapper.'
-          gh workflow run build-pr.yml --repo "${GITHUB_REPOSITORY}" --ref "${branch}" -f ref="${branch}"
+          gh pr create --repo "${GITHUB_REPOSITORY}" --base "${default_branch}" --head "${branch}" --title 'build: update Maven Wrapper' --body 'Updates Maven Wrapper.'
+          run_build
