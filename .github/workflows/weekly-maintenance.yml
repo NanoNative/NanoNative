@@ -82,7 +82,7 @@ jobs:
               fi
               if [ "${dry_run}" = "true" ]; then
                 echo "Would merge ${repository}#${pr}."
-              elif gh pr merge "${pr}" --repo "${repository}" --squash --delete-branch >/dev/null 2>&1; then
+              elif gh pr merge "${pr}" --repo "${repository}" --squash --delete-branch --admin >/dev/null 2>&1; then
                 echo "Merged ${repository}#${pr}."
               else
                 state=$(gh pr view "${pr}" --repo "${repository}" --json state,mergeStateStatus --jq '.state + ":" + .mergeStateStatus')
