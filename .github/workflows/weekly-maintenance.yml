@@ -80,20 +80,21 @@ jobs:
                 fi
                 continue
               fi
-              mergeable=$(gh pr view "${pr}" --repo "${repository}" --json mergeable --jq '.mergeable')
-              if [ "${mergeable}" != 'true' ]; then
-                echo "${repository}#${pr} is not mergeable; leaving it open."
-                continue
-              fi
               if [ "${dry_run}" = "true" ]; then
                 echo "Would merge ${repository}#${pr}."
-              elif gh pr merge "${pr}" --repo "${repository}" --squash --delete-branch; then
+              elif gh pr merge "${pr}" --repo "${repository}" --squash --delete-branch >/dev/null 2>&1; then
                 echo "Merged ${repository}#${pr}."
-              elif [ "$(gh pr view "${pr}" --repo "${repository}" --json state,mergeStateStatus --jq '.state + ":" + .mergeStateStatus')" = 'OPEN:BEHIND' ]; then
-                echo "${repository}#${pr} changed while another pull request merged; leaving it for refreshed checks."
               else
-                echo "Could not merge ${repository}#${pr}." >&2
-                failures=$((failures + 1))
+                state=$(gh pr view "${pr}" --repo "${repository}" --json state,mergeStateStatus --jq '.state + ":" + .mergeStateStatus')
+                case "${state}" in
+                  OPEN:BEHIND|OPEN:BLOCKED|OPEN:DIRTY|OPEN:UNSTABLE|OPEN:UNKNOWN)
+                    echo "${repository}#${pr} is not ready to merge; leaving it open."
+                    ;;
+                  *)
+                    echo "Could not merge ${repository}#${pr}." >&2
+                    failures=$((failures + 1))
+                    ;;
+                esac
               fi
             done <<EOF
           ${prs}
