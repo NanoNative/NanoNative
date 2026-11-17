@@ -68,8 +68,12 @@ jobs:
               build_check=$(gh run list --repo "${repository}" --workflow build-pr.yml --commit "${commit_sha}" --status completed --limit 20 --json conclusion --jq 'if length == 0 then "missing" elif any(.[]; .conclusion == "success") then "success" else "failed" end')
               if [ "${build_check}" != 'success' ]; then
                 if [ "${build_check}" = 'missing' ]; then
-                  gh workflow run build-pr.yml --repo "${repository}" --ref "${branch}"
-                  echo "Started the normal PR build for ${repository}#${pr}."
+                  if [ "${dry_run}" = 'true' ]; then
+                    echo "Would start the normal PR build for ${repository}#${pr}."
+                  else
+                    gh workflow run build-pr.yml --repo "${repository}" --ref "${branch}"
+                    echo "Started the normal PR build for ${repository}#${pr}."
+                  fi
                 else
                   echo "${repository}#${pr} has no successful normal PR build; leaving it open."
                 fi
