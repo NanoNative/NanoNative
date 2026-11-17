@@ -55,23 +55,30 @@ jobs:
           merge_ready_prs() {
             repository=$1
             base_branch=$2
-            prs=$(gh pr list --repo "${repository}" --base "${base_branch}" --state open --json number,headRefName,headRefOid,isDraft,mergeStateStatus \
-              --jq '.[] | select(.isDraft == false) | select(.mergeStateStatus == "CLEAN" or (.headRefName == "bot/maintenance-homebrew" and (.mergeStateStatus == "UNKNOWN" or .mergeStateStatus == "UNSTABLE"))) | select(.headRefName | test("^(dependabot/|bot/maintenance-)")) | [.number, .headRefName, .headRefOid] | @tsv')
+            prs=$(gh pr list --repo "${repository}" --base "${base_branch}" --state open --json number,headRefName,headRefOid,isDraft \
+              --jq '.[] | select(.isDraft == false) | select(.headRefName | test("^(dependabot/|bot/maintenance-)")) | [.number, .headRefName, .headRefOid] | @tsv')
             while IFS="$(printf '\t')" read -r pr branch commit_sha; do
               if [ -z "${pr}" ]; then
                 continue
               fi
-              if ! gh pr checks "${pr}" --repo "${repository}" >/dev/null 2>&1; then
-                maintenance_check=''
-                if printf '%s\n' "${branch}" | grep -Eq '^bot/maintenance-'; then
-                  maintenance_check=$(gh run list --repo "${repository}" --workflow build-pr.yml --commit "${commit_sha}" --event workflow_dispatch --status completed --limit 1 --json conclusion --jq '.[0].conclusion // empty')
-                fi
-                if [ "${maintenance_check}" = 'success' ]; then
-                  echo "${repository}#${pr} has a green maintenance check."
+              if ! gh api --silent "repos/${repository}/actions/workflows/build-pr.yml" >/dev/null 2>&1; then
+                echo "${repository}#${pr} has no standard build-pr.yml; leaving it open."
+                continue
+              fi
+              build_check=$(gh run list --repo "${repository}" --workflow build-pr.yml --commit "${commit_sha}" --status completed --limit 20 --json conclusion --jq 'if length == 0 then "missing" elif any(.[]; .conclusion == "success") then "success" else "failed" end')
+              if [ "${build_check}" != 'success' ]; then
+                if [ "${build_check}" = 'missing' ]; then
+                  gh workflow run build-pr.yml --repo "${repository}" --ref "${branch}"
+                  echo "Started the normal PR build for ${repository}#${pr}."
                 else
-                  echo "${repository}#${pr} is not green; leaving it open."
-                  continue
+                  echo "${repository}#${pr} has no successful normal PR build; leaving it open."
                 fi
+                continue
+              fi
+              mergeable=$(gh pr view "${pr}" --repo "${repository}" --json mergeable --jq '.mergeable')
+              if [ "${mergeable}" != 'true' ]; then
+                echo "${repository}#${pr} is not mergeable; leaving it open."
+                continue
               fi
               if [ "${dry_run}" = "true" ]; then
                 echo "Would merge ${repository}#${pr}."
